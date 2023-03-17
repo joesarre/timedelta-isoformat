@@ -11,26 +11,6 @@ class DateComponent:
     value: str
     unit: str
     limit: int | None = None
-    quantity: float = 0
-
-    def __post_init__(self):
-        value, unit, limit = self.value, self.unit, self.limit
-        inclusive_limit = not isinstance(self, TimeComponent)
-        try:
-            assert value[0].isdigit()
-            quantity = float(value)
-        except (AssertionError, IndexError, ValueError) as exc:
-            msg = f"unable to parse '{value}' as a positive decimal"
-            raise ValueError(msg) from exc
-        if not quantity:
-            return
-        if limit and not (0 <= quantity <= limit if inclusive_limit else 0 <= quantity < limit):
-            bounds = f"[0..{limit}" + ("]" if inclusive_limit else ")")
-            raise ValueError(f"{unit} value of {value} exceeds range {bounds}")
-        self.quantity = quantity
-
-    def astuple(self):
-        return self.unit, self.quantity
 
 
 @dataclass
@@ -166,20 +146,35 @@ class timedelta(datetime.timedelta):
         assert duration.startswith("P"), "durations must begin with the character 'P'"
 
         if duration[-1].isupper():
-            for component in cls._from_designators(duration[1:]):
-                if component.quantity:
-                    yield component.astuple()
+            components = cls._from_designators(duration[1:])
+            yield from cls._to_measurements(components)
             return
 
         date_segment, _, time_segment = duration[1:].partition("T")
         if date_segment:
-            for component in cls._from_date(date_segment):
-                if component.quantity:
-                    yield component.astuple()
+            components = cls._from_date(date_segment)
+            yield from cls._to_measurements(components)
         if time_segment:
-            for component in cls._from_time(time_segment):
-                if component.quantity:
-                    yield component.astuple()
+            components = cls._from_time(time_segment)
+            yield from cls._to_measurements(components)
+
+    @staticmethod
+    def _to_measurements(components: Components) -> Measurements:
+        for component in components:
+            value, unit, limit = component.value, component.unit, component.limit
+            inclusive_limit = not isinstance(component, TimeComponent)
+            try:
+                assert value[0].isdigit()
+                quantity = float(value)
+            except (AssertionError, IndexError, ValueError) as exc:
+                msg = f"unable to parse '{value}' as a positive decimal"
+                raise ValueError(msg) from exc
+            if not quantity:
+                continue
+            if limit and not (0 <= quantity <= limit if inclusive_limit else 0 <= quantity < limit):
+                bounds = f"[0..{limit}" + ("]" if inclusive_limit else ")")
+                raise ValueError(f"{unit} value of {value} exceeds range {bounds}")
+            yield unit, quantity
 
     @classmethod
     def fromisoformat(cls, duration: str) -> "timedelta":
