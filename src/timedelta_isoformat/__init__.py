@@ -28,7 +28,10 @@ class DateComponent:
         self.quantity = quantity
 
     def astuple(self):
-        return self.unit, self.quantity
+        if self.quantity:
+            return self.unit, self.quantity
+        else:
+            return "weeks", 0
 
 
 @dataclass
@@ -53,25 +56,25 @@ class timedelta(datetime.timedelta):
 
             # YYYY-DDD
             case _, _, _, _, "-", _, _, _:
-                yield DateComponent(segment[0:4], "years")
-                yield DateComponent(segment[5:8], "days", 366)
+                yield DateComponent(segment[0:4], "years").astuple()
+                yield DateComponent(segment[5:8], "days", 366).astuple()
 
             # YYYY-MM-DD
             case _, _, _, _, "-", _, _, "-", _, _:
-                yield DateComponent(segment[0:4], "years")
-                yield DateComponent(segment[5:7], "months", 12)
-                yield DateComponent(segment[8:10], "days", 31)
+                yield DateComponent(segment[0:4], "years").astuple()
+                yield DateComponent(segment[5:7], "months", 12).astuple()
+                yield DateComponent(segment[8:10], "days", 31).astuple()
 
             # YYYYDDD
             case _, _, _, _, _, _, _:
-                yield DateComponent(segment[0:4], "years")
-                yield DateComponent(segment[4:7], "days", 366)
+                yield DateComponent(segment[0:4], "years").astuple()
+                yield DateComponent(segment[4:7], "days", 366).astuple()
 
             # YYYYMMDD
             case _, _, _, _, _, _, _, _:
-                yield DateComponent(segment[0:4], "years")
-                yield DateComponent(segment[4:6], "months", 12)
-                yield DateComponent(segment[6:8], "days", 31)
+                yield DateComponent(segment[0:4], "years").astuple()
+                yield DateComponent(segment[4:6], "months", 12).astuple()
+                yield DateComponent(segment[6:8], "days", 31).astuple()
 
             case _:
                 raise ValueError(f"unable to parse '{segment}' into date components")
@@ -82,27 +85,27 @@ class timedelta(datetime.timedelta):
 
             # HH:MM:SS[.ssssss]
             case _, _, ":", _, _, ":", _, _, ".", *_:
-                yield TimeComponent(segment[0:2], "hours", 24)
-                yield TimeComponent(segment[3:5], "minutes", 60)
-                yield TimeComponent(segment[6:15], "seconds", 60)
+                yield TimeComponent(segment[0:2], "hours", 24).astuple()
+                yield TimeComponent(segment[3:5], "minutes", 60).astuple()
+                yield TimeComponent(segment[6:15], "seconds", 60).astuple()
 
             # HH:MM:SS
             case _, _, ":", _, _, ":", _, _:
-                yield TimeComponent(segment[0:2], "hours", 24)
-                yield TimeComponent(segment[3:5], "minutes", 60)
-                yield TimeComponent(segment[6:8], "seconds", 60)
+                yield TimeComponent(segment[0:2], "hours", 24).astuple()
+                yield TimeComponent(segment[3:5], "minutes", 60).astuple()
+                yield TimeComponent(segment[6:8], "seconds", 60).astuple()
 
             # HHMMSS[.ssssss]
             case _, _, _, _, _, _, ".", *_:
-                yield TimeComponent(segment[0:2], "hours", 24)
-                yield TimeComponent(segment[2:4], "minutes", 60)
-                yield TimeComponent(segment[4:13], "seconds", 60)
+                yield TimeComponent(segment[0:2], "hours", 24).astuple()
+                yield TimeComponent(segment[2:4], "minutes", 60).astuple()
+                yield TimeComponent(segment[4:13], "seconds", 60).astuple()
 
             # HHMMSS
             case _, _, _, _, _, _:
-                yield TimeComponent(segment[0:2], "hours", 24)
-                yield TimeComponent(segment[2:4], "minutes", 60)
-                yield TimeComponent(segment[4:6], "seconds", 60)
+                yield TimeComponent(segment[0:2], "hours", 24).astuple()
+                yield TimeComponent(segment[2:4], "minutes", 60).astuple()
+                yield TimeComponent(segment[4:6], "seconds", 60).astuple()
 
             case _:
                 raise ValueError(f"unable to parse '{segment}' into time components")
@@ -142,7 +145,7 @@ class timedelta(datetime.timedelta):
             assert not (unit and context is week_context), "cannot mix weeks with other units"
             for delimiter, unit in context:
                 if char == delimiter:
-                    yield DateComponent(head + tail, unit)
+                    yield DateComponent(head + tail, unit).astuple()
                     head = tail = ""
                     break
             else:
@@ -164,20 +167,14 @@ class timedelta(datetime.timedelta):
         assert duration.startswith("P"), "durations must begin with the character 'P'"
 
         if duration[-1].isupper():
-            for component in cls._from_designators(duration[1:]):
-                if component.quantity:
-                    yield component.astuple()
+            yield from cls._from_designators(duration[1:])
             return
 
         date_segment, _, time_segment = duration[1:].partition("T")
         if date_segment:
-            for component in cls._from_date(date_segment):
-                if component.quantity:
-                    yield component.astuple()
+            yield from cls._from_date(date_segment)
         if time_segment:
-            for component in cls._from_time(time_segment):
-                if component.quantity:
-                    yield component.astuple()
+            yield from cls._from_time(time_segment)
 
     @classmethod
     def fromisoformat(cls, duration: str) -> "timedelta":
