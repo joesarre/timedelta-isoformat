@@ -156,14 +156,13 @@ class timedelta(datetime.timedelta):
                 pass
 
             assert not (unit and context is week_context), "cannot mix weeks with other units"
-            for delimiter in context:
-                if char == delimiter:
-                    unit = char
-                    yield (TimeComponent if context is time_context else DateComponent)(head + tail, unit)
-                    head = tail = ""
-                    break
-            else:
+
+            # Note: this advances and may exhaust the context iterator
+            if char not in context:
                 raise ValueError(f"unexpected character '{char}'")
+
+            yield (TimeComponent if context is time_context else DateComponent)(head + tail, char)
+            head, tail, unit = "", "", char
 
         assert unit, "no measurements found"
 
