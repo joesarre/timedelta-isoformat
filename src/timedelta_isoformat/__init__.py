@@ -13,7 +13,7 @@ class DateComponent:
     limit: int | None = None
     quantity: float = 0
 
-    def __post_init__(self) -> None:
+    def __post_init__(self):
         try:
             assert self.value[0].isdigit()
             self.quantity = float(self.value)
@@ -28,8 +28,11 @@ class DateComponent:
         bounds = f"[0..{self.limit}" + ("]" if inclusive_limit else ")")
         raise ValueError(f"{self.unit} value of {self.value} exceeds range {bounds}")
 
-    def astuple(self) -> Tuple[str, float]:
-        return self.unit, self.quantity
+    def astuple(self):
+        if self.quantity:
+            return self.unit, self.quantity
+        else:
+            return "weeks", 0
 
 
 @dataclass
@@ -43,6 +46,7 @@ class timedelta(datetime.timedelta):
     """
 
     Components: TypeAlias = Iterable[DateComponent | TimeComponent]
+    Measurements: TypeAlias = Iterable[Tuple[str, float]]
 
     def __repr__(self) -> str:
         return f"timedelta_isoformat.{super().__repr__()}"
@@ -53,25 +57,25 @@ class timedelta(datetime.timedelta):
 
             # YYYY-DDD
             case _, _, _, _, "-", _, _, _:
-                yield DateComponent(segment[0:4], "years")
-                yield DateComponent(segment[5:8], "days", 366)
+                yield DateComponent(segment[0:4], "years").astuple()
+                yield DateComponent(segment[5:8], "days", 366).astuple()
 
             # YYYY-MM-DD
             case _, _, _, _, "-", _, _, "-", _, _:
-                yield DateComponent(segment[0:4], "years")
-                yield DateComponent(segment[5:7], "months", 12)
-                yield DateComponent(segment[8:10], "days", 31)
+                yield DateComponent(segment[0:4], "years").astuple()
+                yield DateComponent(segment[5:7], "months", 12).astuple()
+                yield DateComponent(segment[8:10], "days", 31).astuple()
 
             # YYYYDDD
             case _, _, _, _, _, _, _:
-                yield DateComponent(segment[0:4], "years")
-                yield DateComponent(segment[4:7], "days", 366)
+                yield DateComponent(segment[0:4], "years").astuple()
+                yield DateComponent(segment[4:7], "days", 366).astuple()
 
             # YYYYMMDD
             case _, _, _, _, _, _, _, _:
-                yield DateComponent(segment[0:4], "years")
-                yield DateComponent(segment[4:6], "months", 12)
-                yield DateComponent(segment[6:8], "days", 31)
+                yield DateComponent(segment[0:4], "years").astuple()
+                yield DateComponent(segment[4:6], "months", 12).astuple()
+                yield DateComponent(segment[6:8], "days", 31).astuple()
 
             case _:
                 raise ValueError(f"unable to parse '{segment}' into date components")
@@ -82,27 +86,27 @@ class timedelta(datetime.timedelta):
 
             # HH:MM:SS[.ssssss]
             case _, _, ":", _, _, ":", _, _, ".", *_:
-                yield TimeComponent(segment[0:2], "hours", 24)
-                yield TimeComponent(segment[3:5], "minutes", 60)
-                yield TimeComponent(segment[6:15], "seconds", 60)
+                yield TimeComponent(segment[0:2], "hours", 24).astuple()
+                yield TimeComponent(segment[3:5], "minutes", 60).astuple()
+                yield TimeComponent(segment[6:15], "seconds", 60).astuple()
 
             # HH:MM:SS
             case _, _, ":", _, _, ":", _, _:
-                yield TimeComponent(segment[0:2], "hours", 24)
-                yield TimeComponent(segment[3:5], "minutes", 60)
-                yield TimeComponent(segment[6:8], "seconds", 60)
+                yield TimeComponent(segment[0:2], "hours", 24).astuple()
+                yield TimeComponent(segment[3:5], "minutes", 60).astuple()
+                yield TimeComponent(segment[6:8], "seconds", 60).astuple()
 
             # HHMMSS[.ssssss]
             case _, _, _, _, _, _, ".", *_:
-                yield TimeComponent(segment[0:2], "hours", 24)
-                yield TimeComponent(segment[2:4], "minutes", 60)
-                yield TimeComponent(segment[4:13], "seconds", 60)
+                yield TimeComponent(segment[0:2], "hours", 24).astuple()
+                yield TimeComponent(segment[2:4], "minutes", 60).astuple()
+                yield TimeComponent(segment[4:13], "seconds", 60).astuple()
 
             # HHMMSS
             case _, _, _, _, _, _:
-                yield TimeComponent(segment[0:2], "hours", 24)
-                yield TimeComponent(segment[2:4], "minutes", 60)
-                yield TimeComponent(segment[4:6], "seconds", 60)
+                yield TimeComponent(segment[0:2], "hours", 24).astuple()
+                yield TimeComponent(segment[2:4], "minutes", 60).astuple()
+                yield TimeComponent(segment[4:6], "seconds", 60).astuple()
 
             case _:
                 raise ValueError(f"unable to parse '{segment}' into time components")
@@ -142,7 +146,7 @@ class timedelta(datetime.timedelta):
             assert not (unit and context is week_context), "cannot mix weeks with other units"
             for delimiter, unit in context:
                 if char == delimiter:
-                    yield DateComponent(head + tail, unit)
+                    yield DateComponent(head + tail, unit).astuple()
                     head = tail = ""
                     break
             else:
@@ -151,7 +155,7 @@ class timedelta(datetime.timedelta):
         assert unit, "no measurements found"
 
     @classmethod
-    def _from_duration(cls, duration: str) -> Components:
+    def _from_duration(cls, duration: str) -> Measurements:
         """Selects and runs an appropriate parser for ISO-8601 duration strings
 
         The format of these strings is composed of two segments; date measurements
@@ -180,7 +184,7 @@ class timedelta(datetime.timedelta):
         :raises: `ValueError` with an explanatory message when parsing fails
         """
         try:
-            return cls(**dict(c.astuple() for c in cls._from_duration(duration) if c.quantity))
+            return cls(**dict(cls._from_duration(duration)))
         except (AssertionError, ValueError) as exc:
             raise ValueError(f"could not parse duration '{duration}': {exc}") from exc
 
