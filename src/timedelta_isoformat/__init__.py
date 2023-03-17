@@ -26,7 +26,7 @@ class DateComponent:
     unit: str
     limit: int | None = None
     quantity: float = 0
-    unit_type: TypeAlias = DateUnit
+    unit_type: type = DateUnit
 
     def __post_init__(self) -> None:
         try:
@@ -50,7 +50,7 @@ class DateComponent:
 @dataclass
 class TimeComponent(DateComponent):
     limit: int
-    unit_type: TypeAlias = TimeUnit
+    unit_type: type = TimeUnit
 
 
 class timedelta(datetime.timedelta):
