@@ -1,9 +1,23 @@
 """Supplemental ISO8601 duration format support for :py:class:`datetime.timedelta`"""
 from dataclasses import dataclass
 import datetime
+from enum import StrEnum
 from typing import Iterable, Tuple, TypeAlias
 
 _NUMBER_FORMAT = frozenset("0123456789,.")
+
+class DateUnit(StrEnum):
+    years = "Y"
+    months = "M"
+    days = "D"
+
+class TimeUnit(StrEnum):
+    hours = "H"
+    minutes = "M"
+    seconds = "S"
+
+class WeekUnit(StrEnum):
+    weeks = "W"
 
 
 class timedelta(datetime.timedelta):
@@ -18,7 +32,7 @@ class timedelta(datetime.timedelta):
         limit: int | None = None
 
         def __iter__(self):
-            return iter((self.value, self.unit, self.limit))
+            return iter((self.value, self.unit.name, self.limit))
 
     Components: TypeAlias = Iterable[Component]
     Measurements: TypeAlias = Iterable[Tuple[str, float]]
@@ -32,25 +46,25 @@ class timedelta(datetime.timedelta):
 
             # YYYY-DDD
             case _, _, _, _, "-", _, _, _:
-                yield cls.Component(segment[0:4], "years")
-                yield cls.Component(segment[5:8], "days", 366)
+                yield cls.Component(segment[0:4], DateUnit.years)
+                yield cls.Component(segment[5:8], DateUnit.days, 366)
 
             # YYYY-MM-DD
             case _, _, _, _, "-", _, _, "-", _, _:
-                yield cls.Component(segment[0:4], "years")
-                yield cls.Component(segment[5:7], "months", 12)
-                yield cls.Component(segment[8:10], "days", 31)
+                yield cls.Component(segment[0:4], DateUnit.years)
+                yield cls.Component(segment[5:7], DateUnit.months, 12)
+                yield cls.Component(segment[8:10], DateUnit.days, 31)
 
             # YYYYDDD
             case _, _, _, _, _, _, _:
-                yield cls.Component(segment[0:4], "years")
-                yield cls.Component(segment[4:7], "days", 366)
+                yield cls.Component(segment[0:4], DateUnit.years)
+                yield cls.Component(segment[4:7], DateUnit.days, 366)
 
             # YYYYMMDD
             case _, _, _, _, _, _, _, _:
-                yield cls.Component(segment[0:4], "years")
-                yield cls.Component(segment[4:6], "months", 12)
-                yield cls.Component(segment[6:8], "days", 31)
+                yield cls.Component(segment[0:4], DateUnit.years)
+                yield cls.Component(segment[4:6], DateUnit.months, 12)
+                yield cls.Component(segment[6:8], DateUnit.days, 31)
 
             case _:
                 raise ValueError(f"unable to parse '{segment}' into date components")
@@ -61,27 +75,27 @@ class timedelta(datetime.timedelta):
 
             # HH:MM:SS[.ssssss]
             case _, _, ":", _, _, ":", _, _, ".", *_:
-                yield cls.Component(segment[0:2], "hours", 24)
-                yield cls.Component(segment[3:5], "minutes", 60)
-                yield cls.Component(segment[6:15], "seconds", 60)
+                yield cls.Component(segment[0:2], TimeUnit.hours, 24)
+                yield cls.Component(segment[3:5], TimeUnit.minutes, 60)
+                yield cls.Component(segment[6:15], TimeUnit.seconds, 60)
 
             # HH:MM:SS
             case _, _, ":", _, _, ":", _, _:
-                yield cls.Component(segment[0:2], "hours", 24)
-                yield cls.Component(segment[3:5], "minutes", 60)
-                yield cls.Component(segment[6:8], "seconds", 60)
+                yield cls.Component(segment[0:2], TimeUnit.hours, 24)
+                yield cls.Component(segment[3:5], TimeUnit.minutes, 60)
+                yield cls.Component(segment[6:8], TimeUnit.seconds, 60)
 
             # HHMMSS[.ssssss]
             case _, _, _, _, _, _, ".", *_:
-                yield cls.Component(segment[0:2], "hours", 24)
-                yield cls.Component(segment[2:4], "minutes", 60)
-                yield cls.Component(segment[4:13], "seconds", 60)
+                yield cls.Component(segment[0:2], TimeUnit.hours, 24)
+                yield cls.Component(segment[2:4], TimeUnit.minutes, 60)
+                yield cls.Component(segment[4:13], TimeUnit.seconds, 60)
 
             # HHMMSS
             case _, _, _, _, _, _:
-                yield cls.Component(segment[0:2], "hours", 24)
-                yield cls.Component(segment[2:4], "minutes", 60)
-                yield cls.Component(segment[4:6], "seconds", 60)
+                yield cls.Component(segment[0:2], TimeUnit.hours, 24)
+                yield cls.Component(segment[2:4], TimeUnit.minutes, 60)
+                yield cls.Component(segment[4:6], TimeUnit.seconds, 60)
 
             case _:
                 raise ValueError(f"unable to parse '{segment}' into time components")
@@ -94,9 +108,9 @@ class timedelta(datetime.timedelta):
         in order of largest-to-smallest unit from left-to-right (with the exception of
         week measurements, which must be the only measurement in the string if present).
         """
-        date_context = iter((("Y", "years"), ("M", "months"), ("D", "days")))
-        time_context = iter((("H", "hours"), ("M", "minutes"), ("S", "seconds")))
-        week_context = iter((("W", "weeks"),))
+        date_context = iter(DateUnit)
+        time_context = iter(TimeUnit)
+        week_context = iter(WeekUnit)
 
         context, value, unit = date_context, "", None
         for char in duration:
@@ -114,9 +128,9 @@ class timedelta(datetime.timedelta):
                 pass
 
             assert not (context is week_context and unit), "cannot mix weeks with other units"
-            for delimiter, unit in context:
-                if char == delimiter:
-                    yield cls.Component(value, unit)
+            for unit in context:
+                if char == unit:
+                    yield timedelta.Component(value, unit)
                     value = ""
                     break
             else:
