@@ -14,19 +14,18 @@ class DateComponent:
     quantity: float = 0
 
     def __post_init__(self):
-        try:
-            assert self.value[0].isdigit()
-            self.quantity = float(self.value)
-        except (AssertionError, IndexError, ValueError) as exc:
-            msg = f"unable to parse '{self.value}' as a positive decimal"
-            raise ValueError(msg) from exc
-        if not self.limit:
-            return
+        value, unit, limit = self.value, self.unit, self.limit
         inclusive_limit = not isinstance(self, TimeComponent)
-        if 0 <= self.quantity <= self.limit if inclusive_limit else 0 <= self.quantity < self.limit:
-            return
-        bounds = f"[0..{self.limit}" + ("]" if inclusive_limit else ")")
-        raise ValueError(f"{self.unit} value of {self.value} exceeds range {bounds}")
+        try:
+            assert value[0].isdigit()
+            quantity = float(value)
+        except (AssertionError, IndexError, ValueError) as exc:
+            msg = f"unable to parse '{value}' as a positive decimal"
+            raise ValueError(msg) from exc
+        if limit and not (0 <= quantity <= limit if inclusive_limit else 0 <= quantity < limit):
+            bounds = f"[0..{limit}" + ("]" if inclusive_limit else ")")
+            raise ValueError(f"{unit} value of {value} exceeds range {bounds}")
+        self.quantity = quantity
 
     def astuple(self):
         if self.quantity:
