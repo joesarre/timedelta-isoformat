@@ -36,18 +36,23 @@ class timedelta(datetime.timedelta):
             try:
                 assert self.value[0].isdigit()
                 self.quantity = float(self.value)
-            except (AssertionError, IndexError, ValueError) as exc:
+                assert self._bounds_check()
+            except (AssertionError, IndexError) as exc:
                 msg = f"unable to parse '{self.value}' as a positive decimal"
                 raise ValueError(msg) from exc
 
-        @property
-        def valid(self) -> bool:
-            if not self.quantity: return False
-            if not self.limit: return True
+        def _bounds_check(self) -> bool:
+            if not self.limit:
+                if 0 <= self.quantity:
+                    return True
 
             inclusive_limit = self.limit not in (24, 60)
-            if inclusive_limit and 0 <= self.quantity <= self.limit: return True
-            if not inclusive_limit and 0 <= self.quantity < self.limit: return True
+            if inclusive_limit:
+                if 0 <= self.quantity <= self.limit:
+                    return True
+            else:
+                if 0 <= self.quantity < self.limit:
+                    return True
 
             bounds = f"[0..{self.limit}" + ("]" if inclusive_limit else ")")
             raise ValueError(f"{self.unit.name} value of {self.value} exceeds range {bounds}")
@@ -185,7 +190,7 @@ class timedelta(datetime.timedelta):
         :raises: `ValueError` with an explanatory message when parsing fails
         """
         try:
-            return cls(**{m.unit.name: m.quantity for m in cls._parse_duration(duration) if m.valid})
+            return cls(**{m.unit.name: m.quantity for m in cls._parse_duration(duration) if m.quantity})
         except (AssertionError, ValueError) as exc:
             raise ValueError(f"could not parse duration '{duration}': {exc}") from exc
 
