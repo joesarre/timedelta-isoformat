@@ -32,7 +32,7 @@ class timedelta(datetime.timedelta):
         limit: int | None = None
         quantity: float = 0
 
-        def __post_init__(self):
+        def __post_init__(self) -> None:
             try:
                 assert self.value[0].isdigit()
                 self.quantity = float(self.value)
@@ -41,7 +41,7 @@ class timedelta(datetime.timedelta):
                 raise ValueError(msg) from exc
 
         @property
-        def valid(self):
+        def valid(self) -> bool:
             if not self.quantity: return False
             if not self.limit: return True
 
@@ -53,7 +53,6 @@ class timedelta(datetime.timedelta):
             raise ValueError(f"{self.unit.name} value of {self.value} exceeds range {bounds}")
 
     Components: TypeAlias = Iterable[Component]
-    Measurements: TypeAlias = Iterable[Tuple[str, float]]
 
     def __repr__(self) -> str:
         return f"timedelta_isoformat.{super().__repr__()}"
@@ -157,7 +156,7 @@ class timedelta(datetime.timedelta):
         assert unit, "no measurements found"
 
     @classmethod
-    def _parse_duration(cls, duration: str) -> Measurements:
+    def _parse_duration(cls, duration: str) -> Components:
         """Selects and runs an appropriate parser for ISO-8601 duration strings
 
         The format of these strings is composed of two segments; date measurements
