@@ -30,12 +30,21 @@ class timedelta(datetime.timedelta):
         value: str
         unit: str
         limit: int | None = None
+        integer_only: bool = True
         quantity: float = 0
 
         def __post_init__(self) -> None:
+            assert self._type_check()
             assert self.value[0:1].isdigit(), f"unable to parse '{self.value}' as a positive decimal"
             self.quantity = float(self.value)
             assert self._bounds_check()
+
+        def _type_check(self) -> bool:
+            if self.integer_only:
+                assert self.value.isdigit(), f"unable to parse '{self.value}' as a positive number"
+            else:
+                assert self.value[0:1].isdigit(), f"unable to parse '{self.value}' as a positive number"
+            return True
 
         def _bounds_check(self) -> bool:
             msg = f"{self.unit.name} value of {self.value} exceeds range "
@@ -89,7 +98,7 @@ class timedelta(datetime.timedelta):
             case _, _, ":", _, _, ":", _, _, ".", *_:
                 yield cls.Component(segment[0:2], TimeUnit.hours, 24)
                 yield cls.Component(segment[3:5], TimeUnit.minutes, 60)
-                yield cls.Component(segment[6:15], TimeUnit.seconds, 60)
+                yield cls.Component(segment[6:15], TimeUnit.seconds, 60, False)
 
             # HH:MM:SS
             case _, _, ":", _, _, ":", _, _:
@@ -101,7 +110,7 @@ class timedelta(datetime.timedelta):
             case _, _, _, _, _, _, ".", *_:
                 yield cls.Component(segment[0:2], TimeUnit.hours, 24)
                 yield cls.Component(segment[2:4], TimeUnit.minutes, 60)
-                yield cls.Component(segment[4:13], TimeUnit.seconds, 60)
+                yield cls.Component(segment[4:13], TimeUnit.seconds, 60, False)
 
             # HHMMSS
             case _, _, _, _, _, _:
@@ -142,7 +151,7 @@ class timedelta(datetime.timedelta):
             assert not (context is week_context and unit), "cannot mix weeks with other units"
             for unit in context:
                 if char == unit:
-                    yield timedelta.Component(value, unit)
+                    yield timedelta.Component(value, unit, None, False)
                     value = ""
                     break
             else:
