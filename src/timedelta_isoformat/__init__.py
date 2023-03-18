@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 import datetime
 from enum import StrEnum
-from typing import Iterable, Tuple, TypeAlias
+from typing import Iterable, TypeAlias
 
 _NUMBER_FORMAT = frozenset("0123456789,.")
 
@@ -33,23 +33,19 @@ class timedelta(datetime.timedelta):
         quantity: float = 0
 
         def __post_init__(self) -> None:
-            try:
-                assert self.value[0].isdigit()
-                self.quantity = float(self.value)
-                assert self._bounds_check()
-            except (AssertionError, IndexError) as exc:
-                msg = f"unable to parse '{self.value}' as a positive decimal"
-                raise ValueError(msg) from exc
+            assert self.value[0:1].isdigit(), f"unable to parse '{self.value}' as a positive decimal"
+            self.quantity = float(self.value)
+            assert self._bounds_check()
 
         def _bounds_check(self) -> bool:
-            inclusive_limit = self.limit not in (24, 60)
-            match self.limit, inclusive_limit:
-                case None, _ if 0 <= self.quantity: return True
-                case _, True if 0 <= self.quantity <= self.limit: return True
-                case _, False if 0 <= self.quantity < self.limit: return True
-
-            bounds = f"[0..{self.limit}" + ("]" if inclusive_limit else ")")
-            raise ValueError(f"{self.unit.name} value of {self.value} exceeds range {bounds}")
+            msg = f"{self.unit.name} value of {self.value} exceeds range "
+            if self.limit is None:
+                assert 0 <= self.quantity, msg + "[0..+∞)"
+            elif self.limit in (24, 60):
+                assert 0 <= self.quantity < self.limit, msg + f"[0..{self.limit})"
+            else:
+                assert 0 <= self.quantity <= self.limit, msg + f"[0..{self.limit}]"
+            return True
 
     Components: TypeAlias = Iterable[Component]
 
