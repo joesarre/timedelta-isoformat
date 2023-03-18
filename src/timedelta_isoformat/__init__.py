@@ -42,17 +42,11 @@ class timedelta(datetime.timedelta):
                 raise ValueError(msg) from exc
 
         def _bounds_check(self) -> bool:
-            if not self.limit:
-                if 0 <= self.quantity:
-                    return True
-
             inclusive_limit = self.limit not in (24, 60)
-            if inclusive_limit:
-                if 0 <= self.quantity <= self.limit:
-                    return True
-            else:
-                if 0 <= self.quantity < self.limit:
-                    return True
+            match self.limit, inclusive_limit:
+                case None, _ if 0 <= self.quantity: return True
+                case _, True if 0 <= self.quantity <= self.limit: return True
+                case _, False if 0 <= self.quantity < self.limit: return True
 
             bounds = f"[0..{self.limit}" + ("]" if inclusive_limit else ")")
             raise ValueError(f"{self.unit.name} value of {self.value} exceeds range {bounds}")
