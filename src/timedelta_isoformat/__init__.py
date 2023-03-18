@@ -30,9 +30,27 @@ class timedelta(datetime.timedelta):
         value: str
         unit: str
         limit: int | None = None
+        quantity: float = 0
 
-        def __iter__(self):
-            return iter((self.value, self.unit.name, self.limit))
+        def __post_init__(self):
+            try:
+                assert self.value[0].isdigit()
+                self.quantity = float(self.value)
+            except (AssertionError, IndexError, ValueError) as exc:
+                msg = f"unable to parse '{self.value}' as a positive decimal"
+                raise ValueError(msg) from exc
+
+        @property
+        def valid(self):
+            if not self.quantity: return False
+            if not self.limit: return True
+
+            inclusive_limit = self.limit not in (24, 60)
+            if inclusive_limit and 0 <= self.quantity <= self.limit: return True
+            if not inclusive_limit and 0 <= self.quantity < self.limit: return True
+
+            bounds = f"[0..{self.limit}" + ("]" if inclusive_limit else ")")
+            raise ValueError(f"{self.unit.name} value of {self.value} exceeds range {bounds}")
 
     Components: TypeAlias = Iterable[Component]
     Measurements: TypeAlias = Iterable[Tuple[str, float]]
@@ -41,7 +59,7 @@ class timedelta(datetime.timedelta):
         return f"timedelta_isoformat.{super().__repr__()}"
 
     @classmethod
-    def _from_date(cls, segment: str) -> Components:
+    def _parse_date(cls, segment: str) -> Components:
         match tuple(segment):
 
             # YYYY-DDD
@@ -70,7 +88,7 @@ class timedelta(datetime.timedelta):
                 raise ValueError(f"unable to parse '{segment}' into date components")
 
     @classmethod
-    def _from_time(cls, segment: str) -> Components:
+    def _parse_time(cls, segment: str) -> Components:
         match tuple(segment):
 
             # HH:MM:SS[.ssssss]
@@ -101,7 +119,7 @@ class timedelta(datetime.timedelta):
                 raise ValueError(f"unable to parse '{segment}' into time components")
 
     @classmethod
-    def _from_designators(cls, duration: str) -> Components:
+    def _parse_designators(cls, duration: str) -> Components:
         """Parser for designator-separated ISO-8601 duration strings
 
         The code sweeps through the input exactly once, expecting to find measurements
@@ -139,7 +157,7 @@ class timedelta(datetime.timedelta):
         assert unit, "no measurements found"
 
     @classmethod
-    def _from_duration(cls, duration: str) -> Measurements:
+    def _parse_duration(cls, duration: str) -> Measurements:
         """Selects and runs an appropriate parser for ISO-8601 duration strings
 
         The format of these strings is composed of two segments; date measurements
@@ -152,31 +170,14 @@ class timedelta(datetime.timedelta):
         assert duration.startswith("P"), "durations must begin with the character 'P'"
 
         if duration[-1].isupper():
-            yield from cls._to_measurements(cls._from_designators(duration[1:]))
+            yield from cls._parse_designators(duration[1:])
             return
 
         date_segment, _, time_segment = duration[1:].partition("T")
         if date_segment:
-            yield from cls._to_measurements(cls._from_date(date_segment))
+            yield from cls._parse_date(date_segment)
         if time_segment:
-            yield from cls._to_measurements(cls._from_time(time_segment))
-
-    @staticmethod
-    def _to_measurements(components: Components) -> Measurements:
-        for value, unit, limit in components:
-            try:
-                assert value[0].isdigit()
-                quantity = float(value)
-            except (AssertionError, IndexError, ValueError) as exc:
-                msg = f"unable to parse '{value}' as a positive decimal"
-                raise ValueError(msg) from exc
-            if not quantity:
-                continue
-            inclusive_limit = limit not in (24, 60)
-            if limit and not (0 <= quantity <= limit if inclusive_limit else 0 <= quantity < limit):
-                bounds = f"[0..{limit}" + ("]" if inclusive_limit else ")")
-                raise ValueError(f"{unit} value of {value} exceeds range {bounds}")
-            yield unit, quantity
+            yield from cls._parse_time(time_segment)
 
     @classmethod
     def fromisoformat(cls, duration: str) -> "timedelta":
@@ -185,7 +186,7 @@ class timedelta(datetime.timedelta):
         :raises: `ValueError` with an explanatory message when parsing fails
         """
         try:
-            return cls(**dict(cls._from_duration(duration)))
+            return cls(**{m.unit.name: m.quantity for m in cls._parse_duration(duration) if m.valid})
         except (AssertionError, ValueError) as exc:
             raise ValueError(f"could not parse duration '{duration}': {exc}") from exc
 
