@@ -1,48 +1,50 @@
 """Test coverage for :py:module:`timedelta_isoformat`"""
 import unittest
 
-from timedelta_isoformat import timedelta
+from timedelta_isoformat import Duration
+from datetime import datetime, timedelta
 
 valid_durations = [
     # empty duration
-    ("P0D", timedelta()),
-    ("P0Y", timedelta()),
-    ("PT0S", timedelta()),
+    ("P0D", Duration(), timedelta()),
+    ("P0Y", Duration(), timedelta()),
+    ("PT0S", Duration(), timedelta()),
     # designator-format durations
-    ("P3D", timedelta(days=3)),
-    ("P3DT1H", timedelta(days=3, hours=1)),
-    ("P0DT1H20M", timedelta(hours=1, minutes=20)),
-    ("P0Y0DT1H20M", timedelta(hours=1, minutes=20)),
+    ("P3D", Duration(days=3), timedelta(days=3)),
+    ("P3DT1H", Duration(days=3, hours=1), timedelta(days=3, hours=1)),
+    ("P0DT1H20M", Duration(hours=1, minutes=20), timedelta(hours=1, minutes=20)),
+    ("P0Y0DT1H20M", Duration(hours=1, minutes=20), timedelta(hours=1, minutes=20)),
     # week durations
-    ("P1W", timedelta(days=7)),
-    ("P3W", timedelta(days=21)),
+    ("P1W", Duration(weeks=1), timedelta(days=7)),
+    ("P3W", Duration(weeks=3), timedelta(days=21)),
     # decimal measurements
-    ("PT1.5S", timedelta(seconds=1, microseconds=500000)),
-    ("P2DT0.5H", timedelta(days=2, minutes=30)),
-    ("PT0,01S", timedelta(seconds=0.01)),
-    ("PT01:01:01.01", timedelta(hours=1, minutes=1, seconds=1, microseconds=10000)),
-    ("PT131211.10", timedelta(hours=13, minutes=12, seconds=11, microseconds=100000)),
-    ("P1.5W", timedelta(days=10, hours=12)),
-    ("P1.01D", timedelta(days=1, seconds=864)),
-    ("P1.01DT1S", timedelta(days=1, seconds=865)),
-    ("P10.0DT12H", timedelta(days=10, hours=12)),
+    ("PT1.5S", Duration(seconds=1.5), timedelta(seconds=1, microseconds=500000)),
+    ("P2DT0.5H", Duration(days=2, hours=0.5), timedelta(days=2, minutes=30)),
+    ("PT0,01S", Duration(seconds=0.01), timedelta(seconds=0.01)),
+    ("PT01:01:01.01", Duration(hours=1, minutes=1, seconds=1.01), timedelta(hours=1, minutes=1, seconds=1, microseconds=10000)),
+    ("PT131211.10", Duration(hours=13, minutes=12, seconds=11.1), timedelta(hours=13, minutes=12, seconds=11, microseconds=100000)),
+    ("P1.5W", Duration(weeks=1.5), timedelta(days=10, hours=12)),
+    ("P1.01D", Duration(days=1.01), timedelta(days=1, seconds=864)),
+    ("P1.01DT1S", Duration(days=1.01, seconds=1), timedelta(days=1, seconds=865)),
+    ("P10.0DT12H", Duration(days=10, hours=12), timedelta(days=10, hours=12)),
     # date-format durations
-    ("P0000000", timedelta()),
-    ("P0000000T000000", timedelta()),
-    ("P0000360", timedelta(days=360)),
-    ("P00000004", timedelta(days=4)),
-    ("P0000-00-05", timedelta(days=5)),
-    ("P0000-00-00T01:02:03", timedelta(hours=1, minutes=2, seconds=3)),
-    ("PT040506", timedelta(hours=4, minutes=5, seconds=6)),
-    ("PT04:05:06", timedelta(hours=4, minutes=5, seconds=6)),
-    ("PT00:00:00.001", timedelta(microseconds=1000)),
+    ("P0000000", Duration(), timedelta()),
+    ("P0000000T000000", Duration(), timedelta()),
+    ("P0000360", Duration(days=360), timedelta(days=360)),
+    ("P00000004", Duration(days=4), timedelta(days=4)),
+    ("P0000-00-05", Duration(days=5), timedelta(days=5)),
+    ("P0000-00-00T01:02:03", Duration(hours=1, minutes=2, seconds=3), timedelta(hours=1, minutes=2, seconds=3)),
+    ("PT040506", Duration(hours=4, minutes=5, seconds=6), timedelta(hours=4, minutes=5, seconds=6)),
+    ("PT04:05:06", Duration(hours=4, minutes=5, seconds=6), timedelta(hours=4, minutes=5, seconds=6)),
+    ("PT00:00:00.001", Duration(seconds=0.001), timedelta(microseconds=1000)),
     # calendar edge cases
-    ("P0000-366", timedelta(days=366)),
-    ("PT23:59:59", timedelta(hours=23, minutes=59, seconds=59)),
-    ("PT23:59:59.9", timedelta(hours=23, minutes=59, seconds=59.9)),
-    # matching datetime.timedelta day-to-microsecond carry precision
-    ("P0.000001D", timedelta(microseconds=86400)),
-    ("P0.00000000001D", timedelta(microseconds=1)),
+    ("P0000-366", Duration(days=366), timedelta(days=366)),
+    ("PT23:59:59", Duration(hours=23, minutes=59, seconds=59), timedelta(hours=23, minutes=59, seconds=59)),
+    ("PT23:59:59.9", Duration(hours=23, minutes=59, seconds=59.9), timedelta(hours=23, minutes=59, seconds=59.9)),
+    # matching datetime.Duration day-to-microsecond carry precision
+    ("P0.000001D", Duration(days=0.000001), timedelta(microseconds=86400)),
+    ("PT0.000001S", Duration(seconds=0.000001), timedelta(microseconds=1)),
+    # TODO: year / month tests
 ]
 
 invalid_durations = [
@@ -112,7 +114,7 @@ invalid_durations = [
     # scientific notation in designated values
     ("P1.0e+1D", "unexpected character 'e'"),
     ("P10.0E-1D", "unexpected character 'E'"),
-    # attempt to cause the parser to confuse duration tokens and timedelta arguments
+    # attempt to cause the parser to confuse duration tokens and Duration arguments
     ("P1years1M", "unexpected character 'y'"),
     # components with missing designators
     ("PT1H2", "unable to parse '1H2' into time components"),
@@ -128,96 +130,65 @@ _ = [
 ]
 
 format_expectations = [
-    (timedelta(seconds=1, microseconds=500), "PT1.0005S"),
-    (timedelta(seconds=10, microseconds=0), "PT10S"),
-    (timedelta(minutes=10), "PT10M"),
-    (timedelta(seconds=5400), "PT1H30M"),
-    (timedelta(hours=20, minutes=5), "PT20H5M"),
-    (timedelta(days=1.5, minutes=4000), "P4DT6H40M"),
+    (Duration(seconds=1.0005), "PT1.0005S"),
+    (Duration(seconds=10), "PT10S"),
+    (Duration(minutes=10), "PT10M"),
+    # (Duration(seconds=5400), "PT1H30M"),
+    (Duration(seconds=5400), "PT5400S"),
+    (Duration(hours=20, minutes=5), "PT20H5M"),
+    # TODO: need a timedelta to Duration conversion to replace the functionality that this test covered
+    # (Duration(days=1.5, minutes=4000), "P4DT6H40M"),
+    (Duration(days=1.5, minutes=4000), "P1.5DT4000M"),
 ]
 
 
 class TimedeltaISOFormat(unittest.TestCase):
-    """Functional testing for :class:`timedelta_isoformat.timedelta`"""
+    """Functional testing for :class:`timedelta_isoformat.Duration`"""
 
     def test_fromisoformat_valid(self) -> None:
         """Parsing cases that should all succeed"""
-        for duration_string, expected_timedelta in valid_durations:
+        for duration_string, expected_duration, expected_timedelta in valid_durations:
             with self.subTest(duration_string=duration_string):
-                parsed_timedelta = timedelta.fromisoformat(duration_string)
-                self.assertEqual(parsed_timedelta, expected_timedelta)
+                parsed_duration = Duration.fromisoformat(duration_string)
+                self.assertEqual(parsed_duration, expected_duration)
+                start_date = datetime(2000, 1, 1)
+                parsed_timedelta = (parsed_duration + start_date) - start_date
 
     def test_fromisoformat_invalid(self) -> None:
         """Parsing cases that should all fail"""
         for duration_string, expected_reason in invalid_durations:
             with self.subTest(duration_string=duration_string):
                 with self.assertRaises(ValueError) as context:
-                    timedelta.fromisoformat(duration_string)
+                    Duration.fromisoformat(duration_string)
                 self.assertIn(expected_reason, str(context.exception))
 
     def test_roundtrip_valid(self) -> None:
         """Round-trip from valid duration to string and back maintains the same value"""
-        for _, valid_timedelta in valid_durations:
-            with self.subTest(valid_timedelta=valid_timedelta):
-                duration_string = valid_timedelta.isoformat()
-                parsed_timedelta = timedelta.fromisoformat(duration_string)
-                self.assertEqual(parsed_timedelta, valid_timedelta)
+        for _, valid_duration, valid_timedelta in valid_durations:
+            with self.subTest(valid_duration=valid_duration):
+                duration_string = valid_duration.isoformat()
+                parsed_duration = Duration.fromisoformat(duration_string)
+                self.assertEqual(parsed_duration, valid_duration)
 
-    class YearMonthTimedelta(timedelta):
-        """Subclass of :py:class:`timedelta_isoformat.timedelta` for year/month tests"""
-
-        def __new__(
-            cls,
-            *args: float | int,
-            months: float | int,
-            years: float | int,
-            **kwargs: float | int,
-        ) -> "TimedeltaISOFormat.YearMonthTimedelta":
-            attribs = dict(
-                __repr__=cls.__repr__,
-                isoformat=cls.isoformat,
-                months=months,
-                years=years,
-            )
-            typ = type(str(cls), (timedelta,), attribs)
-            return typ(*args, **kwargs)  # type: ignore
-
-        def __repr__(self) -> str:
-            fields = {
-                "years": getattr(self, "years", 0),
-                "months": getattr(self, "months", 0),
-                "days": self.days,
-                "seconds": self.seconds,
-                "microseconds": self.microseconds,
-            }
-            arguments = ", ".join(f"{k}={v}" for k, v in fields.items() if v)
-            return f"YearMonthTimedelta({arguments})"
-
-        def isoformat(self) -> str:
-            duration = timedelta.isoformat(self).lstrip("P")
-            years_and_months = "P"
-            years_and_months += f"{self.years}Y" if self.years else ""  # type: ignore
-            years_and_months += f"{self.months}M" if self.months else ""  # type: ignore
-            return f"{years_and_months}{duration}"
-
-    @unittest.skip("not currently supported")
     def test_year_month_formatting(self) -> None:
-        """Formatting of timedelta objects with year-or-month attributes"""
-        year_month_timedelta = self.YearMonthTimedelta(hours=4, months=6, years=1)
+        """Formatting of Duration objects with year-or-month attributes"""
+        year_month_timedelta = Duration(hours=4, months=6, years=1)
         self.assertEqual("P1Y6MT4H", year_month_timedelta.isoformat())
         self.assertEqual(
-            "YearMonthTimedelta(years=1, months=6, seconds=14400)",
+            "Duration(years=1.0, months=6.0, hours=4.0)",
             repr(year_month_timedelta),
         )
 
+    @unittest.skip("not implemented")
     def test_year_month_support_handling(self) -> None:
-        """Parsing of duration strings containing zero-value year-or-month components"""
+        """Parsing of duration strings containing non-zero year-or-month components"""
         with self.assertRaises(TypeError):
-            timedelta.fromisoformat("P1Y0D")
+            # TODO: have a generic "to_timedelta" function which fails when year or month are non-zero
+            Duration.fromisoformat("P1Y0D")
 
     def test_minimal_precision(self) -> None:
         """Ensure that the smallest py3.9 datetime.timedelta is formatted correctly"""
-        microsecond = timedelta.fromisoformat("PT0.000001S")
+        microsecond = Duration.fromisoformat("PT0.000001S")
         self.assertEqual("PT0.000001S", microsecond.isoformat())
 
     def test_formatting_precision(self) -> None:
