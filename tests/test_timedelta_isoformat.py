@@ -1,8 +1,9 @@
 """Test coverage for :py:module:`timedelta_isoformat`"""
 import unittest
 
-from timedelta_isoformat import Duration
+from timedelta_isoformat import Duration, Interval
 from datetime import datetime, timedelta
+import pytz
 
 valid_durations = [
     # empty duration
@@ -44,7 +45,10 @@ valid_durations = [
     # matching datetime.Duration day-to-microsecond carry precision
     ("P0.000001D", Duration(days=0.000001), timedelta(microseconds=86400)),
     ("PT0.000001S", Duration(seconds=0.000001), timedelta(microseconds=1)),
-    # TODO: year / month tests
+    # mixing week units with other units
+    ("P1WT1H", Duration(weeks=1, hours=1), timedelta(days=7, hours=1)),
+    ("P0Y1W", Duration(weeks=1), timedelta(days=7)),
+
 ]
 
 invalid_durations = [
@@ -68,9 +72,6 @@ invalid_durations = [
     # invalid units within segment
     ("PT1DS", "unexpected character 'D'"),
     ("P1HT0S", "unexpected character 'H'"),
-    # mixing week units with other units
-    ("P1WT1H", "cannot mix weeks with other units"),
-    ("P0Y1W", "cannot mix weeks with other units"),
     # incorrect quantities
     ("PT0.0.0S", "unable to parse '0.0.0' as a positive decimal"),
     ("P1.,0D", "unable to parse '1.,0' as a positive decimal"),
@@ -97,7 +98,6 @@ invalid_durations = [
     ("P1W2W", "unexpected character 'W'"),
     # segments out-of-order
     ("P1DT5S2W", "unexpected character 'W'"),
-    ("P1W1D", "unexpected character 'D'"),
     # unexpected characters within date/time components
     ("PT01:-2:03", "unable to parse '-2' as a positive decimal"),
     ("P000000.1", "unable to parse '.1' as a positive decimal"),
@@ -141,6 +141,131 @@ format_expectations = [
     (Duration(days=1.5, minutes=4000), "P1.5DT4000M"),
 ]
 
+interval_expectations = [
+    (
+        "2000-01-01T00:00:00/2000-01-02T00:00:00",
+        Interval(
+            start=datetime(2000,1,1),
+            end=datetime(2000,1,2),
+            duration=Duration(days=1)
+        )
+    ),
+    (
+        "2000-01-01T00:00:00/P1D",
+        Interval(
+            start=datetime(2000,1,1),
+            end=datetime(2000,1,2),
+            duration=Duration(days=1)
+        )
+    ),
+    (
+        "2000-01-01T00:00:00/P1M",
+        Interval(
+            start=datetime(2000,1,1),
+            end=datetime(2000,2,1),
+            duration=Duration(months=1)
+        )
+    ),
+    (
+        "2000-01-01T00:00:00/P1MT1M",
+        Interval(
+            start=datetime(2000,1,1),
+            end=datetime(2000,2,1,0,1),
+            duration=Duration(months=1, minutes=1)
+        )
+    ),
+    (
+        "2000-01-31T00:00:00/P1M",
+        ValueError("day is out of range for month")
+    ),
+    (
+        "2000-01-31T00:00:00/P0.97M",
+        ValueError("fractional months are not supported")
+    ),
+    (
+        "2000-01-31T00:00:00/P2M",
+        Interval(
+            start=datetime(2000,1,31),
+            end=datetime(2000,3,31),
+            duration=Duration(months=2)
+        )
+    ),
+    (
+        "2000-04-30T00:00:00/P1M1D",
+        Interval(
+            start=datetime(2000,4,30),
+            end=datetime(2000,5,31),
+            duration=Duration(months=1, days=1)
+        )
+    ),
+    (
+        "1999-01-28T00:00:00/P1Y1M1DT1H1M1.0005S",
+        Interval(
+            start=datetime(1999,1,28),
+            end=datetime(2000,2,29,1,1,1,500),
+            duration=Duration(years=1, months=1, days=1, hours=1, minutes=1, seconds=1.0005)
+        )
+    ),
+    (
+        "2001-01-28T00:00:00/P1M1D",
+        Interval(
+            start=datetime(2001,1,28),
+            end=datetime(2001,3,1),
+            duration=Duration(months=1, days=1)
+        )
+    ),
+    (
+        "2000-01-01T00:00:00/P1W",
+        Interval(
+            start=datetime(2000,1,1),
+            end=datetime(2000,1,8),
+            duration=Duration(weeks=1)
+        )
+    ),
+    (
+        "2000-01-01T00:00:00/P1W1D",
+        Interval(
+            start=datetime(2000,1,1),
+            end=datetime(2000,1,9),
+            duration=Duration(weeks=1, days=1)
+        )
+    ),
+    (
+        "2000-02-28T00:00:00/PT24H",
+        Interval(
+            start=datetime(2000,2,28),
+            end=datetime(2000,2,29),
+            duration=Duration(hours=24)
+        )
+    ),
+    (
+        "2001-02-28T00:00:00/PT24H",
+        Interval(
+            start=datetime(2001,2,28),
+            end=datetime(2001,3,1),
+            duration=Duration(hours=24)
+        )
+    ),
+    (
+        # test that the month is applied before the day
+        "2000-02-29T00:00:00/P1M1D",
+        Interval(
+            start=datetime(2000,2,29),
+            end=datetime(2000,3,30),
+            duration=Duration(months=1, days=1)
+        )
+    ),
+    (
+        # test that the year is applied before the month
+        "1999-01-29T00:00:00/P1Y1M",
+        Interval(
+            start=datetime(1999,1,29),
+            end=datetime(2000,2,29),
+            duration=Duration(years=1, months=1)
+        )
+    )
+]
+
 
 class TimedeltaISOFormat(unittest.TestCase):
     """Functional testing for :class:`timedelta_isoformat.Duration`"""
@@ -179,12 +304,10 @@ class TimedeltaISOFormat(unittest.TestCase):
             repr(year_month_timedelta),
         )
 
-    @unittest.skip("not implemented")
     def test_year_month_support_handling(self) -> None:
         """Parsing of duration strings containing non-zero year-or-month components"""
-        with self.assertRaises(TypeError):
-            # TODO: have a generic "to_timedelta" function which fails when year or month are non-zero
-            Duration.fromisoformat("P1Y0D")
+        with self.assertRaises(ValueError):
+            Duration.fromisoformat("P1Y0D").to_timedelta()
 
     def test_minimal_precision(self) -> None:
         """Ensure that the smallest py3.9 datetime.timedelta is formatted correctly"""
@@ -196,3 +319,40 @@ class TimedeltaISOFormat(unittest.TestCase):
         for sample_timedelta, expected_format in format_expectations:
             with self.subTest(sample_timedelta=sample_timedelta):
                 self.assertEqual(expected_format, sample_timedelta.isoformat())
+
+    def test_interval_parsing(self) -> None:
+        """Parsing of interval strings"""
+        for interval_string, expected_interval in interval_expectations:
+            with self.subTest(interval_string=interval_string):
+                if isinstance(expected_interval, Exception):
+                    with self.assertRaises(type(expected_interval)) as context:
+                        Interval.fromisoformat(interval_string)
+                    self.assertIn(str(expected_interval), str(context.exception))
+                else:
+                    parsed_interval = Interval.fromisoformat(interval_string)
+                    self.assertEqual(parsed_interval, expected_interval)
+    
+    def test_crossing_dst_boundary(self) -> None:
+        """Test that a Duration in hours is taken as actual elapsed time, not just difference in local time"""
+        eastern = pytz.timezone('US/Eastern')
+
+        # Test that a duration of 23 hours is exactly one day when starting DST
+        start = eastern.localize(datetime(2020, 3, 7, 12, 0, 0))
+        end = start + Duration(hours=23)
+        self.assertEqual(end, eastern.localize(datetime(2020, 3, 8, 12, 0, 0)))
+
+        # Test that a duration of 25 hours is exactly one day when ending DST
+        start = eastern.localize(datetime(2020, 10, 31, 12, 0, 0))
+        end = start + Duration(hours=25)
+        self.assertEqual(end, eastern.localize(datetime(2020, 11, 1, 12, 0, 0)))
+
+        # Test that a duration of 1 day is treated as 1 day when starting DST
+        start = eastern.localize(datetime(2020, 3, 7, 12, 0, 0))
+        end = start + Duration(days=1)
+        self.assertEqual(end, eastern.localize(datetime(2020, 3, 8, 12, 0, 0)))
+
+        # Test that a duration of 1 day is treated as 1 day when ending DST
+        start = eastern.localize(datetime(2020, 10, 31, 12, 0, 0))
+        end = start + Duration(days=1)
+        self.assertEqual(end, eastern.localize(datetime(2020, 11, 1, 12, 0, 0)))
+        

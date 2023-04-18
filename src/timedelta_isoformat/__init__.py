@@ -1,6 +1,8 @@
 """Supplemental ISO8601 duration format support for :py:class:`datetime.timedelta`"""
 import datetime
+import pytz
 from enum import StrEnum
+from functools import total_ordering
 from typing import Iterable, Tuple, TypeAlias, Union
 from dataclasses import dataclass
 
@@ -31,11 +33,10 @@ MeasuredValue: TypeAlias = float
 Components: TypeAlias = Iterable[Tuple[RawValue, Unit, MeasurementLimit]]
 Measurements: TypeAlias = Iterable[Tuple[Unit, MeasuredValue]]
 
-
+@total_ordering
 class Duration(object):
-    # TODO: update
-    """Subclass of :py:class:`datetime.timedelta` with additional methods to implement
-    ISO8601-style parsing and formatting.
+    """
+    ISO8601 duration format support
     """
     def __init__(
         self,
@@ -123,9 +124,8 @@ class Duration(object):
         in order of largest-to-smallest unit from left-to-right (with the exception of
         week measurements, which must be the only measurement in the string if present).
         """
-        date_context = {"D": "days", "M": "months", "Y": "years"}
+        date_context = {"D": "days", "W": "weeks", "M": "months", "Y": "years"}
         time_context = {"S": "seconds", "M": "minutes", "H": "hours"}
-        week_context = {"W": "weeks"}
 
         context, value, values_found = date_context, "", False
         for char in duration:
@@ -138,10 +138,6 @@ class Duration(object):
                 context = time_context
                 continue
 
-            if char == "W" and context is date_context:
-                context = week_context
-                pass
-
             while context:
                 designator, unit = context.popitem()
                 if designator == char:
@@ -149,7 +145,6 @@ class Duration(object):
             else:
                 raise ValueError(f"unexpected character '{char}'")
 
-            assert len(week_context) or not values_found, "cannot mix weeks with other units"
             yield value, unit, None
             value, values_found = "", True
 
@@ -207,22 +202,23 @@ class Duration(object):
         except (AssertionError, ValueError) as exc:
             raise ValueError(f"could not parse  duration '{duration}': {exc}") from exc
 
+    @classmethod
+    def from_timedelta(cls, td: datetime.timedelta) -> "Duration":
+        return cls(days=td.days, seconds=td.seconds + (td.microseconds / 1000000.0))
+
     def __bool__(self) -> bool:
-        return bool(self.years or self.months or self.days or self.hours or self.minutes or self.seconds)
+        return bool(self.years or self.months or self.weeks or self.days or self.hours or self.minutes or self.seconds)
 
 
     def isoformat(self) -> str:
         """Produce an ISO8601-style representation of this :py:class:`timedelta`"""
-        # TODO: years, months
         if not self:
             return "P0D"
 
         result = "P"
-        # TODO: move function out
-        def _format_as_integer_if_possible(number: float) -> str:
-            return f"{number:.6f}".rstrip("0").rstrip(".") # TODO: on the one hand this number of decimal places feels arbitrary, but on the other hand I don't want the iso format durations to be full of extremely long floats to the 20th decimal place
         result += f"{_format_as_integer_if_possible(self.years)}Y" if self.years else ""
         result += f"{_format_as_integer_if_possible(self.months)}M" if self.months else ""
+        result += f"{_format_as_integer_if_possible(self.weeks)}W" if self.weeks else ""
         result += f"{_format_as_integer_if_possible(self.days)}D" if self.days else ""
         
         if self.hours or self.minutes or self.seconds:
@@ -232,35 +228,45 @@ class Duration(object):
             result += f"{_format_as_integer_if_possible(self.seconds)}S" if self.seconds else ""
         return result
     
-    # TODO: template type
-    def __add__(self, other: Union[datetime.datetime, datetime.timedelta, "Duration"]):
-        # TODO: I couldn't find anything in ISO 8601 wikipedia page about whether to apply right to left or left to right.
-        # TODO: come up with a test case that differs on this distinction. Feb 28 + P1M1D. If we apply the month first, then it's March 29th. If we apply the day first then it's April 1st
-        if isinstance(other, datetime.datetime):            
+    def __add__(self, other: Union[datetime.datetime, datetime.timedelta, "Duration"]) -> Union[datetime.datetime, "Duration"]:
+        # I couldn't find anything in ISO 8601 wikipedia page about whether to apply right to left or left to right.
+        # Feb 28 + P1M1D differs on this distinction. If we apply the month first, then it's March 29th. If we apply the day first then it's April 1st
+        # In this case we choose to apply the month first, because it's more intuitive to me.
+        if isinstance(other, datetime.datetime):
             end_time = other
-            
-            # we add seconds and days separately in case there are leap seconds
-            # TODO: seconds > 86400 added to a day before a leap second
-            
-            # Leap seconds are ignored. Reasons: https://stackoverflow.com/questions/39686553/what-does-python-return-on-the-leap-second
-            end_time += datetime.timedelta(
-                days=self.days + (7.0 * self.weeks),
-                hours=self.hours,
-                minutes=self.minutes,
-                seconds=self.seconds
-            )
 
-            # TODO: fractional months, e.g. P0.5M. Does that end up with a fractional day in an odd numbered month? :vomit:
-            # for now, months are rounded, but that it definitely wrong
+            # fractional months are not supported, because the behaviour is not well defined
+            if self.months % 1 != 0:
+                raise ValueError("fractional months are not supported")
+            
+            # we add the integer and fractional components of months separately
             new_zero_indexed_month = end_time.month - 1 + round(self.months)
-            end_time = end_time.replace(
-                month = (new_zero_indexed_month % 12) + 1,
-            )
-
             new_year = end_time.year + round(self.years) + (new_zero_indexed_month // 12)
             end_time = end_time.replace(
                 year = new_year,
             )
+
+            end_time = end_time.replace(
+                month = (new_zero_indexed_month % 12) + 1,
+            )
+            
+
+            # we add days ignoring time
+            naive_time = end_time.replace(tzinfo=None)
+            naive_time += datetime.timedelta(
+                days=self.days + (7.0 * self.weeks),
+            )
+            end_time = end_time.tzinfo.localize(naive_time) if end_time.tzinfo else naive_time
+
+            # if the datetime is timezone aware, then we add hours in UTC, because the specification says that
+            # a day is not necessarily 24 hours around a DST boundary (https://en.wikipedia.org/wiki/ISO_8601#Durations)
+            utc_time = end_time.astimezone(pytz.utc) if end_time.tzinfo else end_time
+            utc_time += datetime.timedelta(
+                hours=self.hours,
+                minutes=self.minutes,
+                seconds=self.seconds
+            )
+            end_time = utc_time.astimezone(end_time.tzinfo) if end_time.tzinfo else utc_time
 
             return end_time
         elif isinstance(other, datetime.timedelta):
@@ -283,15 +289,126 @@ class Duration(object):
             )
         raise TypeError(f"Cannot add Duration and {type(other).__name__}")
     
-    # TODO: either implement all rich comparison methods or use functools.total_ordering
+    def __radd__(self, other):
+        return self.__add__(other)
+
     def __eq__(self, other):
         return (
             self.years == other.years and
             self.months == other.months and
+            self.weeks == other.weeks and
             self.days == other.days and
             self.hours == other.hours and
             self.minutes == other.minutes and
             self.seconds == other.seconds
         )
 
-# TODO: test crossing DST
+    def __lt__(self, other):
+        return (
+            self.years < other.years or
+            self.months < other.months or
+            self.weeks < other.weeks or
+            self.days < other.days or
+            self.hours < other.hours or
+            self.minutes < other.minutes or
+            self.seconds < other.seconds
+        )
+
+    def to_timedelta(self, start_date: datetime.datetime = None) -> datetime.timedelta:
+        if not (self.years or self.months):
+            start_date = datetime(1970, 1, 1) # doesn't matter what the start_date is if there are no years or months
+        if start_date is None:
+            raise ValueError(f"Cannot convert a Duration with years or months to a timedelta without a start date")
+        return (start_date + self) - start_date
+
+
+@total_ordering
+class Interval(object):
+    def __init__(
+        self,
+        start: datetime.datetime | None,
+        end: datetime.datetime | None,
+        duration: Duration | None,
+    ):
+        if start is not None and duration is None and end is not None:
+            self.start = start
+            self.end = end
+            self.duration = Duration.from_timedelta(end - start)
+
+        elif start is None and duration is not None and end is not None:
+            self.end = end
+            self.duration = duration
+            self.start = end - duration
+
+        elif start is not None and duration is not None and end is None:
+            self.start = start
+            self.duration = duration
+            self.end = start + duration
+
+        elif start is not None and duration is not None and end is not None:
+            self.start = start
+            self.duration = duration
+            self.end = end
+
+        else:
+            raise ValueError(f"Interval takes at least two of start, duration and end")
+        
+        if self.start + self.duration != self.end:
+            raise ValueError(f"Start, duration and end do not match up: {self.start} + {self.duration} = {self.start + self.duration} not {self.end}")
+    
+    @classmethod
+    def to_timedelta(self):
+        return self.end - self.start
+
+    @classmethod
+    def fromisoformat(cls, interval: str) -> "Interval":
+        """Parses an ISO8601 interval input string and returns a :py:class:`Interval` result
+
+        :raises: `ValueError` with an explanatory message when parsing fails
+
+        There are four ways to express a time interval:
+
+            Start and end, such as "2007-03-01T13:00:00Z/2008-05-11T15:30:00Z"
+            Start and duration, such as "2007-03-01T13:00:00Z/P1Y2M10DT2H30M"
+            Duration and end, such as "P1Y2M10DT2H30M/2008-05-11T15:30:00Z"
+            Duration only, such as "P1Y2M10DT2H30M", with additional context information
+        """
+        if "/" not in interval:
+            raise ValueError(f"Interval must contain a slash")
+        start, end = interval.split("/")
+        if start.startswith("P") and end.startswith("P"):
+            raise ValueError(f"Interval cannot have two durations")
+        if start.startswith("P"):
+            duration = Duration.fromisoformat(start)
+            end = datetime.datetime.fromisoformat(end)
+            return cls(None, end, duration)
+        if end.startswith("P"):
+            duration = Duration.fromisoformat(end)
+            start = datetime.datetime.fromisoformat(start)
+            return cls(start, None, duration)
+        start = datetime.datetime.fromisoformat(start)
+        end = datetime.datetime.fromisoformat(end)
+        return cls(start, end, None)
+
+    def __str__(self):
+        return self.isoformat()
+    
+    def __repr__(self):
+        return f"Interval({repr(self.start)}/{repr(self.end)})"
+
+    def __eq__(self, other: "Interval") -> bool:
+        return (
+            self.start == other.start and
+            self.end == other.end and
+            self.duration == other.duration
+        )
+    
+    def __lt__(self, other: "Interval") -> bool:
+        return self.to_timedelta() < other.to_timedelta()
+    
+    def isoformat(self):
+        return f"{self.start.isoformat()}/{self.end.isoformat()}"
+
+
+def _format_as_integer_if_possible(number: float) -> str:
+    return f"{number:.6f}".rstrip("0").rstrip(".")
